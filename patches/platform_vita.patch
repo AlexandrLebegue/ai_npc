@@ -1,0 +1,16 @@
+--- a/CryCommon/platform.h
++++ b/CryCommon/platform.h
+@@ -80,6 +80,12 @@
+ #if defined(LINUX32)
+ #define _CPU_X86
+ #include <Linux32Specific.h>
+ #endif
+
++// ── PS Vita (PSP2) ────────────────────────────────────────────────────────
++#if defined(VITA) || defined(__vita__) || defined(__psp2__)
++#define _CPU_ARM
++#include <PSVitaSpecific.h>
++#endif
++// ─────────────────────────────────────────────────────────────────────────
++
+ #include "stdio.h"
