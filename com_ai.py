@@ -41,8 +41,8 @@ class AiAgent:
                 stream=True,
             )
 
-            new_message = self.BASIC_MESSAGE
-            
+            new_message = {"role": "assistant", "content": ""}
+
             for chunk in completion:
                 if chunk.choices[0].delta.content:
                     print(chunk.choices[0].delta.content, end="", flush=True)
@@ -80,14 +80,12 @@ class AiAgent:
                 stream=True,
             )
         
-        new_message = self.BASIC_MESSAGE
-        new_message["content"] = ""
+        new_message = {"role": "assistant", "content": ""}
         for chunk in completion:
                 if chunk.choices[0].delta.content:
-                    #print(chunk.choices[0].delta.content, end="", flush=True)
                     new_message["content"] += chunk.choices[0].delta.content
-        
-        
+
+        self.history.append(new_message)
         return new_message["content"]
 
 
