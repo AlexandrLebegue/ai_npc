@@ -47,11 +47,17 @@
 #include <psp2/io/fcntl.h>
 #include <psp2/io/stat.h>
 // The engine calls CreateFile / ReadFile / WriteFile — map to POSIX fd
-#define GENERIC_READ    0x80000000
-#define GENERIC_WRITE   0x40000000
-#define OPEN_EXISTING   3
-#define CREATE_ALWAYS   2
-#define FILE_SHARE_READ 1
+#define GENERIC_READ             0x80000000
+#define GENERIC_WRITE            0x40000000
+#define OPEN_EXISTING            3
+#define CREATE_ALWAYS            2
+#define FILE_SHARE_READ          1
+#define FILE_SHARE_WRITE         2
+#define FILE_FLAG_OVERLAPPED     0x40000000
+#define FILE_FLAG_NO_BUFFERING   0x20000000
+#define INVALID_FILE_SIZE        0xFFFFFFFF
+#define FILE_ATTRIBUTE_NORMAL    0x80
+#define FILE_ATTRIBUTE_DIRECTORY 0x10
 
 inline HANDLE VitaCreateFile(const char* path, DWORD access, DWORD /*share*/,
                                void* /*sec*/, DWORD disp, DWORD /*flags*/, HANDLE /*tmpl*/)
@@ -66,13 +72,19 @@ inline HANDLE VitaCreateFile(const char* path, DWORD access, DWORD /*share*/,
 }
 #define CreateFile(p,a,s,sc,d,f,t)  VitaCreateFile(p,a,s,sc,d,f,t)
 
+// ReadFile / WriteFile / GetFileSize are intentionally NOT macros to avoid
+// conflicting with engine class member functions that share the same names.
+// Use free functions in global scope — they coexist with class methods.
 inline BOOL VitaReadFile(HANDLE h, void* buf, DWORD bytes, DWORD* read, void*)
 {
     SceSSize r = sceIoRead((SceUID)(intptr_t)h, buf, bytes);
     if (read) *read = (r >= 0) ? (DWORD)r : 0;
     return r >= 0;
 }
-#define ReadFile(h,b,n,r,o)  VitaReadFile(h,b,n,r,o)
+inline BOOL ReadFile(HANDLE h, void* buf, DWORD bytes, DWORD* read, void* ovl)
+{
+    return VitaReadFile(h, buf, bytes, read, ovl);
+}
 
 inline BOOL VitaWriteFile(HANDLE h, const void* buf, DWORD bytes, DWORD* written, void*)
 {
@@ -80,7 +92,10 @@ inline BOOL VitaWriteFile(HANDLE h, const void* buf, DWORD bytes, DWORD* written
     if (written) *written = (w >= 0) ? (DWORD)w : 0;
     return w >= 0;
 }
-#define WriteFile(h,b,n,w,o) VitaWriteFile(h,b,n,w,o)
+inline BOOL WriteFile(HANDLE h, const void* buf, DWORD bytes, DWORD* written, void* ovl)
+{
+    return VitaWriteFile(h, buf, bytes, written, ovl);
+}
 
 inline BOOL VitaCloseHandle(HANDLE h)
 {
@@ -95,7 +110,10 @@ inline DWORD VitaGetFileSize(HANDLE h, DWORD* high)
     if (high) *high = (DWORD)(st.st_size >> 32);
     return (DWORD)(st.st_size & 0xFFFFFFFF);
 }
-#define GetFileSize(h,hi) VitaGetFileSize(h,hi)
+inline DWORD GetFileSize(HANDLE h, DWORD* high)
+{
+    return VitaGetFileSize(h, high);
+}
 
 // ── Timing ───────────────────────────────────────────────────────────────
 #include <psp2/rtc.h>
@@ -121,9 +139,18 @@ inline DWORD VitaGetTickCount()
 inline void VitaSleep(DWORD ms) { sceKernelDelayThread(ms * 1000); }
 #define Sleep(ms) VitaSleep(ms)
 
+// ── LARGE_INTEGER ─────────────────────────────────────────────────────────
+typedef union _LARGE_INTEGER {
+    struct { DWORD LowPart; LONG HighPart; };
+    struct { DWORD LowPart; LONG HighPart; } u;
+    LONGLONG QuadPart;
+} LARGE_INTEGER, *PLARGE_INTEGER;
+
 // ── Threading stubs ──────────────────────────────────────────────────────
 #include <pthread.h>
 #define GetCurrentThreadId()  ((DWORD)(uintptr_t)pthread_self())
+#define WaitForSingleObjectEx(h,ms,alert) WaitForSingleObject((h),(ms))
+#define SleepEx(ms,alert)     Sleep(ms)
 
 // ── Module loading (everything is statically linked on Vita) ─────────────
 #define LoadLibraryA(path)        ((HMODULE)1)
@@ -131,12 +158,44 @@ inline void VitaSleep(DWORD ms) { sceKernelDelayThread(ms * 1000); }
 #define FreeLibrary(h)            (TRUE)
 #define GetProcAddress(h,name)    ((void*)NULL)
 #define GetLastError()            (0)
-#define SetLastError(e)
+inline void SetLastError(DWORD) {}
 
 // ── OutputDebugString ────────────────────────────────────────────────────
 #define OutputDebugStringA(s)     printf("%s", (s))
 #define OutputDebugStringW(s)     /* wide strings not needed on Vita */
 #define OutputDebugString(s)      OutputDebugStringA(s)
+
+// ── File deletion stubs ──────────────────────────────────────────────────
+inline BOOL VitaDeleteFile(const char* path) { return sceIoRemove(path) >= 0; }
+#define DeleteFile(p)       VitaDeleteFile(p)
+inline BOOL VitaRemoveDirectory(const char* path) { return sceIoRmdir(path) >= 0; }
+#define RemoveDirectory(p)  VitaRemoveDirectory(p)
+inline BOOL VitaMoveFile(const char* src, const char* dst) { return sceIoRename(src, dst) >= 0; }
+#define MoveFile(s,d)       VitaMoveFile(s,d)
+inline BOOL VitaCreateDirectory(const char* path, void*) { return sceIoMkdir(path, 0755) >= 0; }
+#define CreateDirectory(p,s) VitaCreateDirectory(p,s)
+
+// ── Windows time conversions ──────────────────────────────────────────────
+inline BOOL SystemTimeToFileTime(const SYSTEMTIME* st, FILETIME* ft)
+{
+    // Approximate: convert SYSTEMTIME to 100-nanosecond intervals since 1601
+    // For PS Vita, we just return a zero timestamp as we don't need precise times
+    ft->dwLowDateTime  = 0;
+    ft->dwHighDateTime = 0;
+    return TRUE;
+}
+
+// ── memicmp (case-insensitive memory compare) ─────────────────────────────
+#define memicmp(a,b,n) strncasecmp((const char*)(a),(const char*)(b),(n))
+
+// ── Multimedia timer stub ─────────────────────────────────────────────────
+#define timeGetTime()  VitaGetTickCount()
+
+// ── Process/module handles ────────────────────────────────────────────────
+typedef HANDLE HMODULE;
+typedef HANDLE HINSTANCE;
+#define GetModuleHandle(n)    ((HMODULE)0)
+#define GetModuleFileName(h,b,s) (0u)
 
 // ── Misc Windows API stubs ───────────────────────────────────────────────
 #define IsDebuggerPresent()       (0)
@@ -171,6 +230,28 @@ inline void GlobalMemoryStatus(MEMORYSTATUS* ms)
 #define RegQueryValueExA(...)   (1)
 #define RegCloseKey(...)        (0)
 
+// ── Async I/O stubs (not available on Vita) ──────────────────────────────
+#define CancelIo(h)               (TRUE)
+#define SetFilePointer(h,d,dh,m)  ((DWORD)sceIoLseek((SceUID)(intptr_t)(h),(d),(m)))
+#define ReadFileEx(h,b,n,o,cb)    (FALSE)
+#define GetOverlappedResult(h,o,n,w) (FALSE)
+#define FILE_BEGIN   SCE_SEEK_SET
+#define FILE_CURRENT SCE_SEEK_CUR
+#define FILE_END     SCE_SEEK_END
+
+// ── Win32 error codes ─────────────────────────────────────────────────────
+// Note: ERROR_OUT_OF_MEMORY is intentionally NOT defined here because
+// IStreamEngine.h defines it as an engine-specific enum value (0xF0000009).
+#ifndef ERROR_SUCCESS
+#  define ERROR_SUCCESS               0
+#endif
+#ifndef ERROR_FILE_NOT_FOUND
+#  define ERROR_FILE_NOT_FOUND        2
+#endif
+#ifndef ERROR_PATH_NOT_FOUND
+#  define ERROR_PATH_NOT_FOUND        3
+#endif
+
 // ── Overlapped I/O stubs (async file I/O — not available on Vita) ────────
 #ifndef OVERLAPPED
 typedef struct _OVERLAPPED {
@@ -179,6 +260,7 @@ typedef struct _OVERLAPPED {
     DWORD     Offset;
     DWORD     OffsetHigh;
     HANDLE    hEvent;
+    void*     pCaller;  // Linux/Vita extension used by RefReadStreamProxy
 } OVERLAPPED, *LPOVERLAPPED;
 #define OVERLAPPED OVERLAPPED
 #endif

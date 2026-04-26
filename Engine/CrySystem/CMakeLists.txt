@@ -6,6 +6,7 @@ set(EXCLUDE_SOURCES
     "${SRC_ROOT}/SystemWin32.cpp"      # replaced by VitaSystem.cpp
     "${SRC_ROOT}/DebugCallStack.cpp"   # Windows SEH stack walker
     "${SRC_ROOT}/CPUDetect.cpp"        # CPUID — ARM has no CPUID instruction
+    "${SRC_ROOT}/getdxver.cpp"         # DirectX version detection — Windows only
 )
 
 file(GLOB ALL_SOURCES "${SRC_ROOT}/*.cpp")
