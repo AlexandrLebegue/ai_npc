@@ -152,6 +152,20 @@ typedef union _LARGE_INTEGER {
 #define WaitForSingleObjectEx(h,ms,alert) WaitForSingleObject((h),(ms))
 #define SleepEx(ms,alert)     Sleep(ms)
 
+// ── Path-component size constants (MSVC stdlib.h) ────────────────────────
+#ifndef _MAX_DRIVE
+#  define _MAX_DRIVE   3
+#endif
+#ifndef _MAX_DIR
+#  define _MAX_DIR     256
+#endif
+#ifndef _MAX_FNAME
+#  define _MAX_FNAME   256
+#endif
+#ifndef _MAX_EXT
+#  define _MAX_EXT     256
+#endif
+
 // ── Module loading (everything is statically linked on Vita) ─────────────
 #define LoadLibraryA(path)        ((HMODULE)1)
 #define LoadLibraryW(path)        ((HMODULE)1)
