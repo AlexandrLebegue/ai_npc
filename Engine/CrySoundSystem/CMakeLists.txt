@@ -1,8 +1,16 @@
 set(SRC_ROOT "${ENGINE_ROOT}/CrySoundSystem")
 
-# Exclude DirectSound-specific files (audio goes through SceAudio on Vita)
+# Exclude FMOD and audio-codec files not available on Vita
+# (DummySoundSystem is used instead; music system excluded)
 set(EXCLUDE_SOURCES
     "${SRC_ROOT}/DllMain.cpp"
+    "${SRC_ROOT}/SoundSystem.cpp"
+    "${SRC_ROOT}/SoundBuffer.cpp"
+    "${SRC_ROOT}/Sound.cpp"
+    "${SRC_ROOT}/MusicSystem.cpp"
+    "${SRC_ROOT}/MusicPattern.cpp"
+    "${SRC_ROOT}/MusicPatternInstance.cpp"
+    "${SRC_ROOT}/OGGDecoder.cpp"
 )
 
 file(GLOB ALL_SOURCES "${SRC_ROOT}/*.cpp")

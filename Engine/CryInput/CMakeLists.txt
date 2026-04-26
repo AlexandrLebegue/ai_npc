@@ -1,10 +1,11 @@
 set(SRC_ROOT "${ENGINE_ROOT}/CryInput")
 
-# Exclude Win32-specific device files (keyboard/mouse replaced by VitaInput)
+# Exclude Win32/Xbox-specific device files (replaced by VitaInput stubs)
 set(EXCLUDE_SOURCES
     "${SRC_ROOT}/XKeyboard.cpp"
     "${SRC_ROOT}/XMouse.cpp"
     "${SRC_ROOT}/XDebugKeyboard.cpp"
+    "${SRC_ROOT}/XGamepad.cpp"
     "${SRC_ROOT}/DllMain.cpp"
 )
 
