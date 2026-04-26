@@ -32,7 +32,7 @@ static const SceSysmoduleModuleId g_vita_modules[] = {
     SCE_SYSMODULE_NET,
     SCE_SYSMODULE_HTTP,
     SCE_SYSMODULE_HTTPS,
-    SCE_SYSMODULE_LIBSSL,
+    SCE_SYSMODULE_SSL,
     SCE_SYSMODULE_RUDP,
 };
 
@@ -69,7 +69,7 @@ int main(int argc, char* argv[])
     // Hand over to the engine
     int ret = FarCryMain(argc, argv);
 
-    vglEnd();
+    vglSwapBuffers(GL_FALSE);
     sceKernelExitProcess(ret);
     return ret;
 }

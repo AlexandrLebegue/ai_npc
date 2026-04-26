@@ -33,19 +33,20 @@ add_compile_definitions(
     VITA                      # our master Vita guard
     __vita__
     __psp2__                  # vitaSDK internal name
-    LINUX                     # reuse engine's Linux POSIX path
-    LINUX32
+    # NOTE: do NOT define LINUX/LINUX32 — causes type redefinitions with PSVitaSpecific.h
     _CPU_ARM
     NOT_USE_CRY_MEMORY_MANAGER
-    RENDER_EXPORTS
-    PHYSICS_EXPORTS
     _MT
+    # Silence STLPORT threading
+    _NOTHREADS
+    _STLP_NO_THREADS
+    # PHYSICS_EXPORTS and RENDER_EXPORTS are set per-module only
 )
 
 # ── Include paths shared by all targets ───────────────────────
 include_directories(
     "${ENGINE_ROOT}/CryCommon"
-    "${ENGINE_ROOT}/STLPORT/stlport"
+    # STLPORT excluded on Vita — vitaSDK provides its own stdlib
     "${CMAKE_SOURCE_DIR}/Platform/PSVita"
     "${CMAKE_SOURCE_DIR}/Shims"
     "$ENV{VITASDK}/arm-vita-eabi/include"
@@ -55,7 +56,9 @@ include_directories(
 set(VITA_CXX_FLAGS
     "-march=armv7-a -mfpu=neon -mfloat-abi=hard"
     "-fno-rtti -fno-exceptions"
+    "-fpermissive"           # MSVC→GCC: allow non-conformant template lookup
     "-Wno-deprecated -Wno-write-strings -Wno-multichar"
+    "-Wno-error"             # treat all remaining warnings as non-fatal
     "-O2"
 )
 string(REPLACE ";" " " VITA_CXX_FLAGS "${VITA_CXX_FLAGS}")
@@ -79,8 +82,10 @@ add_subdirectory(Engine/XRenderOGL)
 add_subdirectory(Engine/CryGame)
 add_subdirectory(Engine/CryScriptSystem)
 add_subdirectory(Engine/CryFont)
-add_subdirectory(Engine/CryMovie)
-add_subdirectory(Engine/CryNetwork)
+# CryMovie excluded — TCB spline template code requires extensive MSVC→GCC porting
+# add_subdirectory(Engine/CryMovie)
+# CryNetwork excluded — multiplayer not supported on Vita
+# add_subdirectory(Engine/CryNetwork)
 
 # ============================================================
 #  Main executable
@@ -108,8 +113,8 @@ target_link_libraries(FarCry
     cry_render_ogl
     cry_physics
     cry_font
-    cry_movie
-    cry_network
+    # cry_movie — cutscene system excluded on Vita
+    # cry_network — multiplayer excluded on Vita
     cry_system
 
     # vitaSDK system libraries

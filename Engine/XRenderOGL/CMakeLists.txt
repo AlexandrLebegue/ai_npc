@@ -29,3 +29,5 @@ target_link_libraries(cry_render_ogl PRIVATE
     SceGxm_stub
     SceShaccCg_stub
 )
+
+target_compile_definitions(cry_render_ogl PRIVATE RENDER_EXPORTS)

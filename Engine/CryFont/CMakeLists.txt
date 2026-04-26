@@ -6,9 +6,10 @@ add_library(cry_font STATIC ${ALL_SOURCES})
 
 target_include_directories(cry_font PRIVATE
     "${SRC_ROOT}"
+    "${SRC_ROOT}/FreeType2/include"
     "${ENGINE_ROOT}/CryCommon"
     "${CMAKE_SOURCE_DIR}/Platform/PSVita"
     "${CMAKE_SOURCE_DIR}/Shims"
 )
 
-target_link_libraries(cry_font PRIVATE vita_shims)
+target_link_libraries(cry_font PRIVATE vita_shims freetype)

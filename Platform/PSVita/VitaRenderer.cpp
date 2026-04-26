@@ -67,6 +67,6 @@ void VitaRenderer_GetResolution(int* w, int* h)
 // ── Shutdown ─────────────────────────────────────────────────────────────
 void VitaRenderer_Shutdown()
 {
-    vglEnd();
+    vglSwapBuffers(GL_FALSE);
     g_rendererInitialised = false;
 }

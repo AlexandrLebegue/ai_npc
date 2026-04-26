@@ -136,6 +136,7 @@ inline void VitaSleep(DWORD ms) { sceKernelDelayThread(ms * 1000); }
 // ── OutputDebugString ────────────────────────────────────────────────────
 #define OutputDebugStringA(s)     printf("%s", (s))
 #define OutputDebugStringW(s)     /* wide strings not needed on Vita */
+#define OutputDebugString(s)      OutputDebugStringA(s)
 
 // ── Misc Windows API stubs ───────────────────────────────────────────────
 #define IsDebuggerPresent()       (0)
@@ -169,6 +170,18 @@ inline void GlobalMemoryStatus(MEMORYSTATUS* ms)
 #define RegOpenKeyExA(...)      (1)   // ERROR_SUCCESS = 0; 1 = failure
 #define RegQueryValueExA(...)   (1)
 #define RegCloseKey(...)        (0)
+
+// ── Overlapped I/O stubs (async file I/O — not available on Vita) ────────
+#ifndef OVERLAPPED
+typedef struct _OVERLAPPED {
+    ULONG_PTR Internal;
+    ULONG_PTR InternalHigh;
+    DWORD     Offset;
+    DWORD     OffsetHigh;
+    HANDLE    hEvent;
+} OVERLAPPED, *LPOVERLAPPED;
+#define OVERLAPPED OVERLAPPED
+#endif
 
 // MessageBox / dialog stubs
 #define MB_OK       0

@@ -12,3 +12,5 @@ target_include_directories(cry_physics PRIVATE
 )
 
 target_link_libraries(cry_physics PRIVATE vita_shims)
+
+target_compile_definitions(cry_physics PRIVATE PHYSICS_EXPORTS)

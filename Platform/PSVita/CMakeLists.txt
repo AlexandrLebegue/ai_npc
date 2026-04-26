@@ -10,4 +10,4 @@ target_include_directories(vita_platform PUBLIC
     "${CMAKE_SOURCE_DIR}/Shims"
 )
 
-target_compile_definitions(vita_platform PUBLIC VITA __vita__ __psp2__ LINUX LINUX32)
+target_compile_definitions(vita_platform PUBLIC VITA __vita__ __psp2__)
