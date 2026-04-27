@@ -14,7 +14,6 @@
 #include <stdlib.h>
 #include <time.h>
 #include <dirent.h>
-#include <fnmatch.h>
 #include <psp2/io/dirent.h>
 
 // ── File mode open flags ─────────────────────────────────────────────────
@@ -97,9 +96,20 @@ struct _vita_find_handle {
 
 static inline int _vita_match_pattern(const char* name, const char* pat)
 {
-    // simple wildcard matching for * and ?
+    // simple wildcard matching: * matches any sequence, ? matches one char
     if (strcmp(pat, "*") == 0 || strcmp(pat, "*.*") == 0) return 1;
-    return fnmatch(pat, name, FNM_NOESCAPE) == 0;
+    const char* n = name;
+    const char* p = pat;
+    const char* star_p = NULL;
+    const char* star_n = NULL;
+    while (*n) {
+        if (*p == '?' || *p == *n) { n++; p++; }
+        else if (*p == '*') { star_p = p++; star_n = n; }
+        else if (star_p) { p = star_p + 1; n = ++star_n; }
+        else return 0;
+    }
+    while (*p == '*') p++;
+    return *p == '\0';
 }
 
 static inline intptr_t _findfirst64(const char* pattern, struct __finddata64_t* fd)

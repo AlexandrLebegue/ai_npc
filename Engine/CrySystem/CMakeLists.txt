@@ -10,10 +10,14 @@ set(EXCLUDE_SOURCES
 )
 
 file(GLOB ALL_SOURCES "${SRC_ROOT}/*.cpp")
+file(GLOB ALL_C_SOURCES "${SRC_ROOT}/*.c")
 file(GLOB XML_SOURCES "${SRC_ROOT}/XML/*.cpp")
+file(GLOB EXPAT_SOURCES "${SRC_ROOT}/XML/Expat/xmlparse.c"
+                         "${SRC_ROOT}/XML/Expat/xmlrole.c"
+                         "${SRC_ROOT}/XML/Expat/xmltok.c")
 list(REMOVE_ITEM ALL_SOURCES ${EXCLUDE_SOURCES})
 
-add_library(cry_system STATIC ${ALL_SOURCES} ${XML_SOURCES})
+add_library(cry_system STATIC ${ALL_SOURCES} ${ALL_C_SOURCES} ${XML_SOURCES} ${EXPAT_SOURCES})
 
 target_include_directories(cry_system PRIVATE
     "${SRC_ROOT}"
