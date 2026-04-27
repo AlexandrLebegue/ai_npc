@@ -78,7 +78,8 @@ add_subdirectory(Engine/CryAISystem)
 add_subdirectory(Engine/CrySoundSystem)
 add_subdirectory(Engine/CryInput)
 add_subdirectory(Engine/Cry3DEngine)
-add_subdirectory(Engine/XRenderOGL)
+# On Vita use the NULL renderer stub (avoids GL 1.x fixed-function + WGL dependencies)
+add_subdirectory(Engine/XRenderNULL)
 add_subdirectory(Engine/CryGame)
 add_subdirectory(Engine/CryScriptSystem)
 add_subdirectory(Engine/CryFont)
@@ -134,10 +135,9 @@ target_link_libraries(FarCry
     SceCommonDialog_stub
     SceAppMgr_stub
 
-    # Third-party (bundled via vdpm)
-    vitaGL
-    SceShaccCg_stub
-    mathneon
+    # System runtimes
+    pthread
+
     z
     m
 )

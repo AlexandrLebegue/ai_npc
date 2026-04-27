@@ -6,6 +6,7 @@ add_library(cry_script STATIC ${ALL_SOURCES})
 
 target_include_directories(cry_script PRIVATE
     "${SRC_ROOT}"
+    "${SRC_ROOT}/LUA"
     "${ENGINE_ROOT}/CryCommon"
     "${CMAKE_SOURCE_DIR}/Platform/PSVita"
     "${CMAKE_SOURCE_DIR}/Shims"

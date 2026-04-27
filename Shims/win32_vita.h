@@ -24,10 +24,18 @@
 #define strnicmp        strncasecmp
 #define _snprintf       snprintf
 #define _vsnprintf      vsnprintf
+#define _wtof(s)        wcstof((s), NULL)
+#define _wtoi(s)        (int)wcstol((s), NULL, 10)
+#define _wtol(s)        wcstol((s), NULL, 10)
+#define _strlwr(s)      ({ char* _s=(s); for(char* _p=_s;*_p;_p++) *_p=tolower(*_p); _s; })
+#define strlwr(s)       _strlwr(s)
+#define _strupr(s)      ({ char* _s=(s); for(char* _p=_s;*_p;_p++) *_p=toupper(*_p); _s; })
+#define strupr(s)       _strupr(s)
 #define _isnan          isnan
 #define _finite         isfinite
 #define _itoa(v,b,r)    (sprintf((b),"%d",(v)),(b))
 #define _ltoa(v,b,r)    (sprintf((b),"%ld",(v)),(b))
+#define ltoa(v,b,r)     (sprintf((b),"%ld",(v)),(b))
 #define _ultoa(v,b,r)   (sprintf((b),"%lu",(v)),(b))
 #define _i64toa(v,b,r)  (sprintf((b),"%lld",(v)),(b))
 #define _atoi64         atoll
@@ -134,7 +142,8 @@ inline DWORD VitaGetTickCount()
     SceRtcTick t;  sceRtcGetCurrentTick(&t);
     return (DWORD)(t.tick / (sceRtcGetTickResolution() / 1000));
 }
-#define GetTickCount() VitaGetTickCount()
+#define GetTickCount()    VitaGetTickCount()
+#define GetCurrentTime()  VitaGetTickCount()
 
 inline void VitaSleep(DWORD ms) { sceKernelDelayThread(ms * 1000); }
 #define Sleep(ms) VitaSleep(ms)
@@ -279,6 +288,19 @@ typedef struct _OVERLAPPED {
 #define OVERLAPPED OVERLAPPED
 #endif
 
+// RECT — Windows screen rectangle type (POINT defined in CTriangulator.h)
+#ifndef RECT
+typedef struct tagRECT { LONG left, top, right, bottom; } RECT, *PRECT, *LPRECT;
+#endif
+
+// IsBadReadPtr / IsBadWritePtr — always valid on Vita (no VirtualProtect)
+#define IsBadReadPtr(p,n)  (0)
+#define IsBadWritePtr(p,n) (0)
+
+// SetFileAttributes / GetFileAttributes — no-op on Vita
+#define SetFileAttributes(path,attr)  (TRUE)
+#define GetFileAttributes(path)       (FILE_ATTRIBUTE_NORMAL)
+
 // MessageBox / dialog stubs
 #define MB_OK       0
 #define MB_YESNO    4
@@ -287,6 +309,234 @@ typedef struct _OVERLAPPED {
 #define IDYES       6
 #define IDNO        7
 #define MessageBoxA(h,t,c,f)    (printf("[MSG] %s: %s\n",(c),(t)), IDOK)
+
+// GetLocalTime — system time on Vita via RTC
+#include <time.h>
+inline void VitaGetLocalTime(SYSTEMTIME* st)
+{
+    time_t t = time(NULL);
+    struct tm* tm = localtime(&t);
+    if (!tm || !st) return;
+    st->wYear   = (WORD)(tm->tm_year + 1900);
+    st->wMonth  = (WORD)(tm->tm_mon + 1);
+    st->wDay    = (WORD)tm->tm_mday;
+    st->wHour   = (WORD)tm->tm_hour;
+    st->wMinute = (WORD)tm->tm_min;
+    st->wSecond = (WORD)tm->tm_sec;
+    st->wMilliseconds = 0;
+    st->wDayOfWeek = (WORD)tm->tm_wday;
+}
+#define GetLocalTime(st)   VitaGetLocalTime(st)
+#define GetSystemTime(st)  VitaGetLocalTime(st)
+
+// MakeSureDirectoryPathExists — dbghelp.h helper; recursively create dirs
+inline BOOL VitaMakeSureDirectoryPathExists(const char* path)
+{
+    char tmp[512];
+    strncpy(tmp, path, sizeof(tmp)-1);
+    tmp[sizeof(tmp)-1] = '\0';
+    size_t len = strlen(tmp);
+    if (len > 0 && (tmp[len-1] == '/' || tmp[len-1] == '\\'))
+        tmp[len-1] = '\0';
+    for (char* p = tmp + 1; *p; ++p) {
+        if (*p == '/' || *p == '\\') {
+            char c = *p; *p = '\0';
+            sceIoMkdir(tmp, 0755);
+            *p = c;
+        }
+    }
+    sceIoMkdir(tmp, 0755);
+    return TRUE;
+}
+#define MakeSureDirectoryPathExists(p) VitaMakeSureDirectoryPathExists(p)
+
+// LRESULT — Windows message handler return type
+#ifndef LRESULT
+typedef LONG_PTR LRESULT;
+#endif
+
+// HCURSOR / cursor stubs (no cursor concept on Vita)
+#ifndef HCURSOR
+typedef HANDLE HCURSOR;
+#endif
+inline HCURSOR VitaSetCursor(HCURSOR) { return (HCURSOR)NULL; }
+#define SetCursor(hc)       VitaSetCursor(hc)
+#define LoadCursor(h,n)     ((HCURSOR)NULL)
+#define LoadCursorA(h,n)    ((HCURSOR)NULL)
+#define ShowCursor(b)       (0)
+
+// WPARAM / LPARAM (defined in Linux32Specific.h but win32_vita.h may load first)
+#ifndef _WPARAM_DEFINED
+typedef UINT_PTR WPARAM;
+typedef LONG_PTR LPARAM;
+#  define _WPARAM_DEFINED
+#endif
+
+// HWND / HMENU / WNDPROC stubs
+#ifndef HWND
+typedef HANDLE HWND;
+#endif
+#ifndef HMENU
+typedef HANDLE HMENU;
+#endif
+typedef LRESULT (*WNDPROC)(HWND, UINT, WPARAM, LPARAM);
+
+// ATOM — RegisterClass return type
+typedef WORD ATOM;
+
+// Window message constants
+#ifndef WM_USER
+#  define WM_USER         0x0400
+#endif
+#ifndef WM_MOUSEMOVE
+#  define WM_MOUSEMOVE    0x0200
+#  define WM_LBUTTONDOWN  0x0201
+#  define WM_LBUTTONUP    0x0202
+#  define WM_RBUTTONDOWN  0x0204
+#  define WM_RBUTTONUP    0x0205
+#  define WM_MBUTTONDOWN  0x0207
+#  define WM_MBUTTONUP    0x0208
+#  define WM_MOUSEWHEEL   0x020A
+#  define WM_KEYDOWN      0x0100
+#  define WM_KEYUP        0x0101
+#  define WM_CHAR         0x0102
+#  define WM_SIZE         0x0005
+#  define WM_ACTIVATE     0x0006
+#  define WM_PAINT        0x000F
+#  define WM_CLOSE        0x0010
+#  define WM_QUIT         0x0012
+#  define WM_SETFOCUS     0x0007
+#  define WM_KILLFOCUS    0x0008
+#  define WM_SETCURSOR    0x0020
+#  define WM_ERASEBKGND   0x0014
+#  define WM_SYSCOMMAND   0x0112
+#endif
+
+// WNDCLASSEX stub
+typedef struct tagWNDCLASSEXA {
+    UINT      cbSize;
+    UINT      style;
+    WNDPROC   lpfnWndProc;
+    int       cbClsExtra;
+    int       cbWndExtra;
+    HANDLE    hInstance;
+    HCURSOR   hIcon;
+    HCURSOR   hCursor;
+    HANDLE    hbrBackground;
+    const char* lpszMenuName;
+    const char* lpszClassName;
+    HCURSOR   hIconSm;
+} WNDCLASSEXA, *PWNDCLASSEXA, *LPWNDCLASSEXA;
+typedef WNDCLASSEXA WNDCLASSEX;
+
+// MSG stub
+typedef struct tagMSG {
+    HWND   hwnd;
+    UINT   message;
+    WPARAM wParam;
+    LPARAM lParam;
+    DWORD  time;
+} MSG, *PMSG, *LPMSG;
+
+// Window API stubs — use inline functions to avoid macro/method name conflicts
+inline ATOM    VitaRegisterClassEx(const void*) { return (ATOM)1; }
+inline BOOL    VitaUnregisterClass(const char*, HANDLE) { return TRUE; }
+inline HWND    VitaCreateWindowEx(DWORD,const char*,const char*,DWORD,int,int,int,int,HWND,HMENU,HANDLE,void*) { return (HWND)1; }
+inline BOOL    VitaDestroyWindow(HWND) { return TRUE; }
+inline BOOL    VitaShowWindow(HWND,int) { return TRUE; }
+inline BOOL    VitaUpdateWindow(HWND) { return TRUE; }
+inline BOOL    VitaSetWindowText(HWND,const char*) { return TRUE; }
+inline BOOL    VitaGetWindowRect(HWND,RECT*) { return FALSE; }
+inline BOOL    VitaGetClientRect(HWND,RECT*) { return FALSE; }
+inline BOOL    VitaAdjustWindowRect(RECT*,DWORD,BOOL) { return TRUE; }
+inline BOOL    VitaSetWindowPos(HWND,HWND,int,int,int,int,UINT) { return TRUE; }
+inline BOOL    VitaPeekMessage(MSG*,HWND,UINT,UINT,UINT) { return FALSE; }
+inline BOOL    VitaTranslateMessage(const MSG*) { return FALSE; }
+inline LRESULT VitaDispatchMessage(const MSG*) { return (LRESULT)0; }
+inline BOOL    VitaPostMessage(HWND,UINT,WPARAM,LPARAM) { return TRUE; }
+inline LRESULT VitaDefWindowProc(HWND,UINT,WPARAM,LPARAM) { return (LRESULT)0; }
+inline void    VitaPostQuitMessage(int) {}
+inline HWND    VitaGetFocus() { return (HWND)NULL; }
+inline HWND    VitaSetFocus(HWND) { return (HWND)NULL; }
+inline BOOL    VitaIsWindow(HWND) { return FALSE; }
+inline HWND    VitaGetParent(HWND) { return (HWND)NULL; }
+inline BOOL    VitaClientToScreen(HWND, void*) { return FALSE; }
+inline BOOL    VitaScreenToClient(HWND, void*) { return FALSE; }
+
+#define RegisterClassEx(wc)              VitaRegisterClassEx(wc)
+#define UnregisterClass(n,h)             VitaUnregisterClass(n,h)
+#define CreateWindowEx(ex,cn,wn,s,x,y,w,h,p,m,i,lp) VitaCreateWindowEx(ex,cn,wn,s,x,y,w,h,p,m,i,lp)
+#define CreateWindow(cn,wn,s,x,y,w,h,p,m,i,lp)       VitaCreateWindowEx(0,cn,wn,s,x,y,w,h,p,m,i,lp)
+#define DestroyWindow(h)                 VitaDestroyWindow(h)
+#define ShowWindow(h,c)                  VitaShowWindow(h,c)
+#define UpdateWindow(h)                  VitaUpdateWindow(h)
+#define SetWindowText(h,t)               VitaSetWindowText(h,t)
+#define GetWindowRect(h,r)               VitaGetWindowRect(h,r)
+#define GetClientRect(h,r)               VitaGetClientRect(h,r)
+#define AdjustWindowRect(r,s,m)          VitaAdjustWindowRect(r,s,m)
+#define SetWindowPos(h,ha,x,y,w,hh,f)   VitaSetWindowPos(h,ha,x,y,w,hh,f)
+#define PeekMessage(m,h,f,l,r)           VitaPeekMessage(m,h,f,l,r)
+#define TranslateMessage(m)              VitaTranslateMessage(m)
+#define DispatchMessage(m)               VitaDispatchMessage(m)
+#define PostMessage(h,m,w,l)             VitaPostMessage(h,m,w,l)
+#define DefWindowProc(h,m,w,l)           VitaDefWindowProc(h,m,w,l)
+#define DefWindowProcA(h,m,w,l)          VitaDefWindowProc(h,m,w,l)
+#define PostQuitMessage(c)               VitaPostQuitMessage(c)
+// GetFocus/SetFocus intentionally omitted — engine has member functions with same names
+#define IsWindow(h)                      VitaIsWindow(h)
+#define GetParent(h)                     VitaGetParent(h)
+#define ClientToScreen(h,p)              VitaClientToScreen(h,p)
+#define ScreenToClient(h,p)              VitaScreenToClient(h,p)
+
+// Window styles
+#ifndef WS_OVERLAPPEDWINDOW
+#  define WS_OVERLAPPED       0x00000000L
+#  define WS_POPUP            0x80000000L
+#  define WS_CHILD            0x40000000L
+#  define WS_VISIBLE          0x10000000L
+#  define WS_CAPTION          0x00C00000L
+#  define WS_SYSMENU          0x00080000L
+#  define WS_THICKFRAME       0x00040000L
+#  define WS_MINIMIZEBOX      0x00020000L
+#  define WS_MAXIMIZEBOX      0x00010000L
+#  define WS_OVERLAPPEDWINDOW (WS_OVERLAPPED|WS_CAPTION|WS_SYSMENU|WS_THICKFRAME|WS_MINIMIZEBOX|WS_MAXIMIZEBOX)
+#  define WS_EX_APPWINDOW     0x00040000L
+#  define WS_EX_WINDOWEDGE    0x00000100L
+#  define CW_USEDEFAULT       ((int)0x80000000)
+#  define SW_SHOW             5
+#  define SW_HIDE             0
+#  define SW_SHOWNORMAL       1
+#  define HWND_NOTOPMOST      ((HWND)-2)
+#  define HWND_TOPMOST        ((HWND)-1)
+#  define SWP_NOSIZE          0x0001
+#  define SWP_NOMOVE          0x0002
+#  define SWP_NOZORDER        0x0004
+#  define SWP_SHOWWINDOW      0x0040
+#endif
+
+// CS_ class styles
+#ifndef CS_HREDRAW
+#  define CS_HREDRAW    0x0002
+#  define CS_VREDRAW    0x0001
+#  define CS_DBLCLKS    0x0008
+#  define CS_OWNDC      0x0020
+#endif
+
+// PAINTSTRUCT stub
+typedef struct tagPAINTSTRUCT {
+    HANDLE hdc;
+    BOOL   fErase;
+    RECT   rcPaint;
+} PAINTSTRUCT, *PPAINTSTRUCT;
+inline HANDLE VitaBeginPaint(HWND, PAINTSTRUCT*) { return (HANDLE)NULL; }
+inline BOOL   VitaEndPaint(HWND, const PAINTSTRUCT*) { return TRUE; }
+#define BeginPaint(h,ps)  VitaBeginPaint(h,ps)
+#define EndPaint(h,ps)    VitaEndPaint(h,ps)
+
+// HBRUSH stub
+typedef HANDLE HBRUSH;
+#define COLOR_WINDOW    5
+#define GetStockObject(n) ((HANDLE)NULL)
 
 #endif // VITA
 #endif // _WIN32_VITA_SHIM_H_

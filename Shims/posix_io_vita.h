@@ -10,10 +10,12 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include <fcntl.h>
-#include <glob.h>
 #include <string.h>
 #include <stdlib.h>
 #include <time.h>
+#include <dirent.h>
+#include <fnmatch.h>
+#include <psp2/io/dirent.h>
 
 // ── File mode open flags ─────────────────────────────────────────────────
 #ifndef _O_RDONLY
@@ -82,27 +84,22 @@ struct __finddata64_t {
 };
 #endif
 
-// ── Internal state for find-file iteration (using glob) ──────────────────
+// ── Internal state for find-file iteration (using sceIo directory scan) ──
+#define VITA_FIND_MAX 512
 struct _vita_find_handle {
-    glob_t  g;
-    size_t  idx;
+    char   dir[512];       // directory path
+    char   pattern[260];   // filename glob pattern
+    SceUID uid;            // sceIoDopen handle
+    char   matches[VITA_FIND_MAX][260];
+    int    count;
+    int    idx;
 };
 
-static inline intptr_t _vita_fill_fd(struct __finddata64_t* fd, const char* path)
+static inline int _vita_match_pattern(const char* name, const char* pat)
 {
-    struct stat st;
-    if (stat(path, &st) != 0)
-        return -1;
-    const char* base = strrchr(path, '/');
-    base = base ? base + 1 : path;
-    strncpy(fd->name, base, sizeof(fd->name)-1);
-    fd->name[sizeof(fd->name)-1] = 0;
-    fd->size        = (long long)st.st_size;
-    fd->time_write  = (long long)st.st_mtime;
-    fd->time_access = (long long)st.st_atime;
-    fd->time_create = (long long)st.st_ctime;
-    fd->attrib      = S_ISDIR(st.st_mode) ? _A_SUBDIR : _A_NORMAL;
-    return 0;
+    // simple wildcard matching for * and ?
+    if (strcmp(pat, "*") == 0 || strcmp(pat, "*.*") == 0) return 1;
+    return fnmatch(pat, name, FNM_NOESCAPE) == 0;
 }
 
 static inline intptr_t _findfirst64(const char* pattern, struct __finddata64_t* fd)
@@ -110,26 +107,77 @@ static inline intptr_t _findfirst64(const char* pattern, struct __finddata64_t* 
     struct _vita_find_handle* h = (struct _vita_find_handle*)malloc(sizeof(*h));
     if (!h) return -1;
     memset(h, 0, sizeof(*h));
-    if (glob(pattern, GLOB_NOSORT, NULL, &h->g) != 0 || h->g.gl_pathc == 0) {
-        globfree(&h->g);
-        free(h);
-        return -1;
+
+    // Split pattern into directory and filename parts
+    const char* slash = strrchr(pattern, '/');
+    const char* bslash = strrchr(pattern, '\\');
+    const char* sep = slash > bslash ? slash : bslash;
+    if (sep) {
+        size_t dlen = (size_t)(sep - pattern);
+        strncpy(h->dir, pattern, dlen < sizeof(h->dir)-1 ? dlen : sizeof(h->dir)-1);
+        h->dir[dlen < sizeof(h->dir)-1 ? dlen : sizeof(h->dir)-1] = '\0';
+        strncpy(h->pattern, sep+1, sizeof(h->pattern)-1);
+    } else {
+        strncpy(h->dir, ".", sizeof(h->dir)-1);
+        strncpy(h->pattern, pattern, sizeof(h->pattern)-1);
     }
-    h->idx = 0;
-    if (_vita_fill_fd(fd, h->g.gl_pathv[h->idx]) != 0) {
-        globfree(&h->g);
-        free(h);
-        return -1;
+
+    // Scan directory and collect matching entries
+    h->uid = sceIoDopen(h->dir);
+    if (h->uid < 0) { free(h); return -1; }
+
+    SceIoDirent entry;
+    h->count = 0;
+    while (sceIoDread(h->uid, &entry) > 0 && h->count < VITA_FIND_MAX) {
+        if (_vita_match_pattern(entry.d_name, h->pattern)) {
+            strncpy(h->matches[h->count], entry.d_name, 259);
+            h->matches[h->count][259] = '\0';
+            h->count++;
+        }
     }
-    h->idx++;
+    sceIoDclose(h->uid);
+    h->uid = -1;
+
+    if (h->count == 0) { free(h); return -1; }
+
+    // Fill first result
+    char fullpath[1024];
+    snprintf(fullpath, sizeof(fullpath), "%s/%s", h->dir, h->matches[0]);
+    SceIoStat st;
+    if (sceIoGetstat(fullpath, &st) == 0) {
+        strncpy(fd->name, h->matches[0], 259); fd->name[259] = '\0';
+        fd->size        = (long long)st.st_size;
+        fd->attrib      = SCE_S_ISDIR(st.st_mode) ? _A_SUBDIR : _A_NORMAL;
+        fd->time_write  = 0;
+        fd->time_access = 0;
+        fd->time_create = 0;
+    } else {
+        strncpy(fd->name, h->matches[0], 259); fd->name[259] = '\0';
+        fd->attrib = _A_NORMAL; fd->size = 0;
+        fd->time_write = fd->time_access = fd->time_create = 0;
+    }
+    h->idx = 1;
     return (intptr_t)h;
 }
 
 static inline int _findnext64(intptr_t handle, struct __finddata64_t* fd)
 {
     struct _vita_find_handle* h = (struct _vita_find_handle*)handle;
-    if (!h || h->idx >= h->g.gl_pathc) return -1;
-    if (_vita_fill_fd(fd, h->g.gl_pathv[h->idx]) != 0) return -1;
+    if (!h || h->idx >= h->count) return -1;
+
+    char fullpath[1024];
+    snprintf(fullpath, sizeof(fullpath), "%s/%s", h->dir, h->matches[h->idx]);
+    SceIoStat st;
+    if (sceIoGetstat(fullpath, &st) == 0) {
+        strncpy(fd->name, h->matches[h->idx], 259); fd->name[259] = '\0';
+        fd->size   = (long long)st.st_size;
+        fd->attrib = SCE_S_ISDIR(st.st_mode) ? _A_SUBDIR : _A_NORMAL;
+        fd->time_write = fd->time_access = fd->time_create = 0;
+    } else {
+        strncpy(fd->name, h->matches[h->idx], 259); fd->name[259] = '\0';
+        fd->attrib = _A_NORMAL; fd->size = 0;
+        fd->time_write = fd->time_access = fd->time_create = 0;
+    }
     h->idx++;
     return 0;
 }
@@ -137,9 +185,7 @@ static inline int _findnext64(intptr_t handle, struct __finddata64_t* fd)
 static inline void _findclose(intptr_t handle)
 {
     if (!handle) return;
-    struct _vita_find_handle* h = (struct _vita_find_handle*)handle;
-    globfree(&h->g);
-    free(h);
+    free((struct _vita_find_handle*)handle);
 }
 
 // Also provide _findfirst / _findnext wrappers using 64-bit versions
