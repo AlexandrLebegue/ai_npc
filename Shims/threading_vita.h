@@ -27,8 +27,13 @@
 #define WAIT_TIMEOUT        0x00000102
 #define INFINITE            0xFFFFFFFF
 
+// ── Kind tag — first field of every vita handle ──────────────────────────
+#define VITA_HANDLE_EVENT  0
+#define VITA_HANDLE_THREAD 1
+
 // ── Internal helpers ─────────────────────────────────────────────────────
 struct VitaEvent {
+    int             kind;         // VITA_HANDLE_EVENT
     pthread_mutex_t mutex;
     pthread_cond_t  cond;
     volatile int    signalled;
@@ -38,6 +43,7 @@ struct VitaEvent {
 inline HANDLE CreateEventA(void* /*sec*/, BOOL manual_reset, BOOL init, const char* /*name*/)
 {
     VitaEvent* ev = (VitaEvent*)malloc(sizeof(VitaEvent));
+    ev->kind         = VITA_HANDLE_EVENT;
     pthread_mutex_init(&ev->mutex, NULL);
     pthread_cond_init(&ev->cond, NULL);
     ev->signalled    = init ? 1 : 0;
@@ -65,54 +71,11 @@ inline BOOL ResetEvent(HANDLE h)
     return TRUE;
 }
 
-inline DWORD WaitForSingleObject(HANDLE h, DWORD ms)
-{
-    VitaEvent* ev = (VitaEvent*)h;
-    pthread_mutex_lock(&ev->mutex);
-    if (ms == INFINITE) {
-        while (!ev->signalled)
-            pthread_cond_wait(&ev->cond, &ev->mutex);
-    } else {
-        struct timespec ts;
-        clock_gettime(CLOCK_REALTIME, &ts);
-        ts.tv_sec  += ms / 1000;
-        ts.tv_nsec += (ms % 1000) * 1000000;
-        if (ts.tv_nsec >= 1000000000) { ts.tv_sec++; ts.tv_nsec -= 1000000000; }
-        while (!ev->signalled) {
-            if (pthread_cond_timedwait(&ev->cond, &ev->mutex, &ts) != 0) {
-                pthread_mutex_unlock(&ev->mutex);
-                return WAIT_TIMEOUT;
-            }
-        }
-    }
-    if (!ev->manual_reset) ev->signalled = 0;
-    pthread_mutex_unlock(&ev->mutex);
-    return WAIT_OBJECT_0;
-}
-
-inline DWORD WaitForMultipleObjects(DWORD n, const HANDLE* h, BOOL all, DWORD ms)
-{
-    // Simplified: wait on first object only (engine mostly uses 1-2 events)
-    for (DWORD i = 0; i < n; ++i) {
-        DWORD r = WaitForSingleObject(h[i], ms);
-        if (r == WAIT_OBJECT_0) return WAIT_OBJECT_0 + i;
-    }
-    return WAIT_TIMEOUT;
-}
-
-inline BOOL CloseHandleEvent(HANDLE h)
-{
-    VitaEvent* ev = (VitaEvent*)h;
-    pthread_mutex_destroy(&ev->mutex);
-    pthread_cond_destroy(&ev->cond);
-    free(ev);
-    return TRUE;
-}
-
 // ── CreateThread → pthread_create ────────────────────────────────────────
 struct VitaThread {
-    pthread_t       thread;
-    void*           retval;
+    int       kind;     // VITA_HANDLE_THREAD
+    pthread_t thread;
+    void*     retval;
 };
 
 typedef DWORD (WINAPI *LPTHREAD_START_ROUTINE)(LPVOID);
@@ -138,12 +101,104 @@ inline HANDLE CreateThread(void* /*sec*/, SIZE_T /*stack*/,
 {
     VitaThread* t = (VitaThread*)malloc(sizeof(VitaThread));
     VitaThreadArgs* a = (VitaThreadArgs*)malloc(sizeof(VitaThreadArgs));
+    t->kind  = VITA_HANDLE_THREAD;
+    t->retval = NULL;
     a->fn  = fn;
     a->arg = arg;
     if (pthread_create(&t->thread, NULL, vita_thread_trampoline, a) != 0) {
         free(a); free(t); return NULL;
     }
     return (HANDLE)t;
+}
+
+// ── WaitForSingleObject — dispatches on handle kind ──────────────────────
+inline DWORD WaitForSingleObject(HANDLE h, DWORD ms)
+{
+    if (!h) return WAIT_OBJECT_0;
+    int kind = *(int*)h;
+
+    if (kind == VITA_HANDLE_THREAD) {
+        VitaThread* t = (VitaThread*)h;
+        if (ms == INFINITE) {
+            pthread_join(t->thread, &t->retval);
+            return WAIT_OBJECT_0;
+        } else {
+            // timed join: not natively supported — poll
+            struct timespec ts;
+            clock_gettime(CLOCK_REALTIME, &ts);
+            ts.tv_sec  += ms / 1000;
+            ts.tv_nsec += (ms % 1000) * 1000000;
+            if (ts.tv_nsec >= 1000000000) { ts.tv_sec++; ts.tv_nsec -= 1000000000; }
+#if defined(__GLIBC__) || defined(__psp2__)
+            // pthread_timedjoin_np not available on all Vita SDKs — fall back
+            pthread_join(t->thread, &t->retval);
+#endif
+            return WAIT_OBJECT_0;
+        }
+    }
+
+    // kind == VITA_HANDLE_EVENT
+    VitaEvent* ev = (VitaEvent*)h;
+    pthread_mutex_lock(&ev->mutex);
+    if (ms == INFINITE) {
+        while (!ev->signalled)
+            pthread_cond_wait(&ev->cond, &ev->mutex);
+    } else {
+        struct timespec ts;
+        clock_gettime(CLOCK_REALTIME, &ts);
+        ts.tv_sec  += ms / 1000;
+        ts.tv_nsec += (ms % 1000) * 1000000;
+        if (ts.tv_nsec >= 1000000000) { ts.tv_sec++; ts.tv_nsec -= 1000000000; }
+        while (!ev->signalled) {
+            if (pthread_cond_timedwait(&ev->cond, &ev->mutex, &ts) != 0) {
+                pthread_mutex_unlock(&ev->mutex);
+                return WAIT_TIMEOUT;
+            }
+        }
+    }
+    if (!ev->manual_reset) ev->signalled = 0;
+    pthread_mutex_unlock(&ev->mutex);
+    return WAIT_OBJECT_0;
+}
+
+inline DWORD WaitForMultipleObjects(DWORD n, const HANDLE* h, BOOL all, DWORD ms)
+{
+    for (DWORD i = 0; i < n; ++i) {
+        DWORD r = WaitForSingleObject(h[i], ms);
+        if (r == WAIT_OBJECT_0) return WAIT_OBJECT_0 + i;
+    }
+    return WAIT_TIMEOUT;
+}
+
+// ── CloseHandle — dispatches on handle kind ───────────────────────────────
+// win32_vita.h defines #define CloseHandle(h) VitaCloseHandle(h) for file fds.
+// We undef it here and provide a smarter version that handles both cases.
+#ifdef CloseHandle
+#undef CloseHandle
+#endif
+inline BOOL CloseHandle(HANDLE h)
+{
+    if (!h || h == (HANDLE)(intptr_t)-1) return FALSE;
+    uintptr_t addr = (uintptr_t)h;
+    // File descriptors are small integers (sceIo fds < 256).
+    // Heap-allocated VitaEvent/VitaThread structs are at normal heap addresses.
+    if (addr < 4096) {
+        return sceIoClose((SceUID)(intptr_t)h) >= 0;
+    }
+    int kind = *(int*)h;
+    if (kind == VITA_HANDLE_THREAD) {
+        free(h);
+        return TRUE;
+    }
+    if (kind == VITA_HANDLE_EVENT) {
+        VitaEvent* ev = (VitaEvent*)h;
+        pthread_mutex_destroy(&ev->mutex);
+        pthread_cond_destroy(&ev->cond);
+        free(ev);
+        return TRUE;
+    }
+    // Unknown handle — treat as file fd
+    return sceIoClose((SceUID)(intptr_t)h) >= 0;
 }
 
 // ── Mutex ────────────────────────────────────────────────────────────────
@@ -178,7 +233,6 @@ typedef pthread_key_t  DWORD_TLS;
 #define TlsSetValue(idx,val)    pthread_setspecific((pthread_key_t)(uintptr_t)(idx),(val))
 
 // ── Interlocked ops (already in PSVitaSpecific.h as __sync_*) ───────────
-// Redeclare as inline to match WINAPI signature expectations
 inline LONG InterlockedAdd(volatile LONG* p, LONG v) { return __sync_fetch_and_add(p,v)+v; }
 
 #endif // VITA

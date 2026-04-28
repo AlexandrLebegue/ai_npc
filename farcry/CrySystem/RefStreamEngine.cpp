@@ -48,10 +48,8 @@ CRefStreamEngine::CRefStreamEngine (CCryPak* pPak, IMiniLog* pLog, unsigned useW
 	m_hDummyEvent = CreateEvent (NULL, FALSE, FALSE, NULL);
 	memset (m_nSectorSizes, 0, sizeof(m_nSectorSizes));
 
-#if !defined(VITA)
 	if (useWorkerThreads)
 		StartWorkerThread();
-#endif
 }
 
 //////////////////////////////////////////////////////////////////////////

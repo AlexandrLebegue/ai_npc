@@ -920,6 +920,8 @@ ISystem* CreateSystemInterface(SSystemInitParams& initParams);
 
 bool RunGame(HINSTANCE hInstance, const char* sCmdLine)
 {
+    fprintf(stderr, "[VITA] RunGame: start\n");
+
     SSystemInitParams sip;
     sip.sLogFileName = "log.txt";
     sip.pSystem = g_pISystem;
@@ -928,26 +930,40 @@ bool RunGame(HINSTANCE hInstance, const char* sCmdLine)
     if (sCmdLine && sCmdLine[0])
         strncpy(sip.szSystemCmdLine, sCmdLine, sizeof(sip.szSystemCmdLine)-1);
 
+    fprintf(stderr, "[VITA] CreateSystemInterface: calling\n");
     g_pISystem = CreateSystemInterface(sip);
+    fprintf(stderr, "[VITA] CreateSystemInterface: returned %p\n", (void*)g_pISystem);
     if (!g_pISystem)
+    {
+        fprintf(stderr, "[VITA] CreateSystemInterface: FAILED\n");
         return false;
+    }
 
     g_pISystem->GetILog()->EnableVerbosity(true);
+    fprintf(stderr, "[VITA] ISystem created OK, calling CreateGame\n");
 
     SGameInitParams gip;
     if (!g_pISystem->CreateGame(gip))
+    {
+        fprintf(stderr, "[VITA] CreateGame: FAILED\n");
         return false;
+    }
+    fprintf(stderr, "[VITA] CreateGame OK, entering main loop\n");
 
     IGame* pGame = g_pISystem->GetIGame();
     if (pGame)
     {
+        int nFrame = 0;
         while (g_pISystem->GetIGame())
         {
+            if ((nFrame++ % 300) == 0)
+                fprintf(stderr, "[VITA] frame %d\n", nFrame);
             if (!g_pISystem->Update(0, 0))
                 break;
         }
     }
 
+    fprintf(stderr, "[VITA] RunGame: exiting\n");
     g_pISystem->Release();
     g_pISystem = NULL;
     return true;
