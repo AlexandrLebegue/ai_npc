@@ -18,8 +18,10 @@ public:
 	// this class sets the priority order for the proxes
 	struct Order
 	{
-		bool operator ()(const CRefReadStreamProxy* pLeft, const CRefReadStreamProxy* pRight)const 
+		bool operator ()(const CRefReadStreamProxy* pLeft, const CRefReadStreamProxy* pRight)const
 		{
+			if (!pLeft || (uintptr_t)pLeft < 0x1000) return false;
+			if (!pRight || (uintptr_t)pRight < 0x1000) return true;
 			return pLeft->GetPriority() > pRight->GetPriority();
 		}
 	};
