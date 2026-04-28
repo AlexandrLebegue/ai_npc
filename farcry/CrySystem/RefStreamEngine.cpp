@@ -21,11 +21,7 @@ CRefStreamEngine::CRefStreamEngine (CCryPak* pPak, IMiniLog* pLog, unsigned useW
 	m_nMaxReadDepth (16),
 	m_nMaxQueueLength (4*1024),
 	m_nMaxIOMemPool (128*1024*1024),
-#if defined(LINUX) || defined(VITA)
-	m_hIOWorker (INVALID_HANDLE_VALUE),//only diff is here, but what can i do?
-#else
 	m_hIOWorker (NULL),
-#endif
 	m_dwWorkerThreadId(0),
 	m_queIOJobs(ProxyPtrAllocator(g_pSmallHeap)),
 	m_setIOPending(ProxyPtrPredicate(), ProxyPtrAllocator(g_pSmallHeap)),
