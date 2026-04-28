@@ -2,6 +2,9 @@
 #include "StdAfx.h"
 #include "System.h"
 
+// gDLLHandle is defined inside #ifdef WIN32 in DllMain.cpp — provide it here for Vita
+HMODULE gDLLHandle = NULL;
+
 void CSystem::SetAffinity()
 {
     // On Vita all 4 cores are available; no affinity API needed
@@ -42,6 +45,13 @@ bool CSystem::GetSSFileInfo(const char* /*inszFileName*/, char* outszInfo, const
     if (outszInfo && indwBufferSize > 0)
         outszInfo[0] = '\0';
     return false;
+}
+
+int CSystem::AutoDetectRenderer(char* Vendor, char* Device)
+{
+    if (Vendor) strcpy(Vendor, "CryRenderOGL");
+    if (Device) strcpy(Device, "CryRenderOGL");
+    return 1;
 }
 
 void CSystem::Error(const char* szCommand, ...)
