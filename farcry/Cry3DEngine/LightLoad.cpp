@@ -1,0 +1,11 @@
+#include "stdafx.h"
+
+#include "3dEngine.h"
+#include "ObjMan.h"
+#include "VisAreas.h"
+
+#include "LightMan.h"
+
+#ifndef PI
+#define PI 3.14159f
+#endif
