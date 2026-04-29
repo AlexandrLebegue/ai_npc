@@ -20,6 +20,7 @@
 #include <threading_vita.h>
 #include <memory_vita.h>
 #include <posix_io_vita.h>
+#include <vita_module_registry.h>
 
 // ── Poison the real windows.h / winsock headers ──────────────────────────
 // Any #include <windows.h> after this point is a no-op.
